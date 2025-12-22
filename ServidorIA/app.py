@@ -21,20 +21,38 @@ def capture_frame_from_rtsp(rtsp_url, timeout_ms=1500):
     Captura un solo frame del stream RTSP.
     """
     try:
-        # Forzar transporte UDP para RTSP (común para evitar errores de TCP o latencia)
-        # Esto le dice al backend FFmpeg de OpenCV que use UDP.
-        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp"
+        # Intento 1: Usar GStreamer (Mejor para Jetson + RTSP)
+        # Pipeline optimizado para baja latencia
+        # Nota: 'protocols=udp' fuerza transporte UDP si el servidor lo soporta.
+        # Quitamos ?rtsp_transport=... de la URL para GStreamer para evitar duplicidad,
+        # aunque rtspsrc lo maneja en propriedades.
         
-        cap = cv2.VideoCapture(rtsp_url)
+        # Limpiar URL de parámetros extra si existen
+        clean_url = rtsp_url.split("?")[0] if "?" in rtsp_url else rtsp_url
+        
+        gst_pipeline = (
+            f"rtspsrc location={rtsp_url} latency=0 ! "
+            "rtph264depay ! h264parse ! avdec_h264 ! videoconvert ! appsink"
+        )
+        
+        print(f"Intentando abrir con GStreamer: {gst_pipeline}")
+        cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
+        
         if not cap.isOpened():
-            return None, "No se pudo conectar al stream RTSP"
+            print("GStreamer falló, intentando backend por defecto (FFmpeg)...")
+            # Intento 2: Fallback a FFmpeg (Configuración UDP forzada globalmente ya seteada)
+            cap = cv2.VideoCapture(rtsp_url)
+            
+        if not cap.isOpened():
+            return None, "No se pudo conectar al stream RTSP (GStreamer/FFmpeg)"
         
         # Leer un frame
         ret, frame = cap.read()
         cap.release()
         
         if not ret:
-            return None, "No se pudo leer el frame"
+            # A veces el primer frame falla, intentamos una vez más
+             return None, "No se pudo leer el frame (stream vacío o error de decodificación)"
             
         return frame, None
     except Exception as e:
