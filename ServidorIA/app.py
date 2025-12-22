@@ -21,6 +21,10 @@ def capture_frame_from_rtsp(rtsp_url, timeout_ms=1500):
     Captura un solo frame del stream RTSP.
     """
     try:
+        # Forzar transporte UDP para RTSP (común para evitar errores de TCP o latencia)
+        # Esto le dice al backend FFmpeg de OpenCV que use UDP.
+        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp"
+        
         cap = cv2.VideoCapture(rtsp_url)
         if not cap.isOpened():
             return None, "No se pudo conectar al stream RTSP"
@@ -46,11 +50,28 @@ def analyze():
         rtsp_url = data.get('rtsp_url')
         sensor_data = data.get('sensors', {})
         
-        print(f"Recibida solicitud para: {rtsp_url}")
+        # Log sanitizado
+        log_url = rtsp_url
+        if log_url and "@" in log_url:
+            # Ocultar credenciales rtsp://user:pass@host...
+            try:
+                # Basic parsing
+                prefix = log_url.split("://")[0]
+                rest = log_url.split("@")[-1]
+                log_url = f"{prefix}://****:****@{rest}"
+            except:
+                pass
+        
+        print(f"Recibida solicitud para: {log_url}")
         print(f"Datos de sensores: {sensor_data}")
 
         # 1. Capturar Frame
         if rtsp_url:
+            # Forzar UDP en la URL también (FFmpeg suele priorizar esto)
+            if "rtsp_transport" not in rtsp_url:
+                separator = "&" if "?" in rtsp_url else "?"
+                rtsp_url += f"{separator}rtsp_transport=udp"
+
             frame, error = capture_frame_from_rtsp(rtsp_url)
             if frame is None:
                 # Si falla RTSP, intentar usar imagenBase64 si se envió (compatibilidad Opción B)
