@@ -22,25 +22,21 @@ def capture_frame_from_rtsp(rtsp_url, timeout_ms=1500):
     """
     try:
         # Intento 1: Usar GStreamer (Mejor para Jetson + RTSP)
-        # Pipeline optimizado para baja latencia
-        # Nota: 'protocols=udp' fuerza transporte UDP si el servidor lo soporta.
-        # Quitamos ?rtsp_transport=... de la URL para GStreamer para evitar duplicidad,
-        # aunque rtspsrc lo maneja en propriedades.
-        
-        # Limpiar URL de parámetros extra si existen
+        # Limpiar URL de parámetros extra para GStreamer
         clean_url = rtsp_url.split("?")[0] if "?" in rtsp_url else rtsp_url
         
+        # Pipeline optimizado: rtspsrc con protocols=udp explícito
         gst_pipeline = (
-            f"rtspsrc location={rtsp_url} latency=0 ! "
+            f"rtspsrc location={clean_url} latency=0 protocols=udp ! "
             "rtph264depay ! h264parse ! avdec_h264 ! videoconvert ! appsink"
         )
         
-        print(f"Intentando abrir con GStreamer: {gst_pipeline}")
+        print(f"Intentando abrir con GStreamer (clean): {gst_pipeline}")
         cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
         
         if not cap.isOpened():
-            print("GStreamer falló, intentando backend por defecto (FFmpeg)...")
-            # Intento 2: Fallback a FFmpeg (Configuración UDP forzada globalmente ya seteada)
+            print("GStreamer falló (cap.isOpened es False), intentando backend por defecto (FFmpeg)...")
+            # Intento 2: Fallback a FFmpeg (usando URL original con params si los tenía)
             cap = cv2.VideoCapture(rtsp_url)
             
         if not cap.isOpened():
@@ -51,7 +47,6 @@ def capture_frame_from_rtsp(rtsp_url, timeout_ms=1500):
         cap.release()
         
         if not ret:
-            # A veces el primer frame falla, intentamos una vez más
              return None, "No se pudo leer el frame (stream vacío o error de decodificación)"
             
         return frame, None
