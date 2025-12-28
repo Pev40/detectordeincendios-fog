@@ -28,6 +28,8 @@ SMOKE_MODEL_ID = "kittendev/YOLOv8m-smoke-detection"
 fire_model = None
 smoke_model = None
 models_error = None
+models_load_time = None
+models_ready = False
 
 def log(msg):
     print(msg, flush=True)
@@ -37,25 +39,40 @@ def load_models_lazy():
     Carga los modelos una sola vez.
     Si falla, guarda el error para healthcheck.
     """
-    global fire_model, smoke_model, models_error
+    global fire_model, smoke_model, models_error, models_load_time, models_ready
     if fire_model is not None and smoke_model is not None:
         return True
 
     try:
-        log(f"[BOOT] Loading FIRE model: {FIRE_MODEL_ID}")
+        start_time = time.time()
+        
+        log("\n" + "="*60)
+        log("[BOOT] 🔄 Iniciando carga de modelos...")
+        log("="*60)
+        
+        log(f"[BOOT] 📥 Cargando modelo FIRE: {FIRE_MODEL_ID}")
         fire_model = YOLO(FIRE_MODEL_ID)
-        log("[BOOT] FIRE model loaded")
+        log("[BOOT] ✅ Modelo FIRE cargado correctamente")
 
-        log(f"[BOOT] Loading SMOKE model: {SMOKE_MODEL_ID}")
+        log(f"[BOOT] 📥 Cargando modelo SMOKE: {SMOKE_MODEL_ID}")
         smoke_model = YOLO(SMOKE_MODEL_ID)
-        log("[BOOT] SMOKE model loaded")
+        log("[BOOT] ✅ Modelo SMOKE cargado correctamente")
 
+        models_load_time = time.time() - start_time
         models_error = None
+        models_ready = True
+        
+        log("="*60)
+        log(f"[BOOT] ✨ TODOS LOS MODELOS LISTOS (tiempo: {models_load_time:.2f}s)")
+        log("="*60 + "\n")
+        
         return True
 
     except Exception as e:
         models_error = f"{type(e).__name__}: {e}"
-        log("[BOOT] Model load failed:")
+        models_ready = False
+        models_load_time = time.time() - start_time if 'start_time' in locals() else None
+        log("[BOOT] ❌ Error cargando modelos:")
         log(traceback.format_exc())
         fire_model = None
         smoke_model = None
@@ -170,9 +187,11 @@ def health():
     ok = load_models_lazy()
     return jsonify({
         "ok": ok,
+        "models_ready": models_ready,
         "fire_model_loaded": fire_model is not None,
         "smoke_model_loaded": smoke_model is not None,
-        "models_error": models_error
+        "models_error": models_error,
+        "models_load_time_seconds": models_load_time
     }), (200 if ok else 500)
 
 @app.route("/analyze", methods=["POST"])
@@ -260,5 +279,19 @@ def analyze():
         }), 500
 
 if __name__ == "__main__":
+    # Cargar modelos antes de iniciar el servidor
+    log("\n" + "="*60)
+    log("[MAIN] Iniciando servidor Flask...")
+    log("="*60)
+    
+    models_loaded = load_models_lazy()
+    
+    if models_loaded:
+        log("[MAIN] ✅ Servidor listo para recibir requests")
+        log("[MAIN] 📍 GET http://localhost:5000/health - Ver estado de modelos")
+        log("[MAIN] 📍 POST http://localhost:5000/analyze - Procesar frames")
+    else:
+        log("[MAIN] ⚠️  ADVERTENCIA: Modelos no cargados, el servidor intentará cargarlos en la primera request")
+    
     # Para debug ok. En prod: gunicorn -w 1 -b 0.0.0.0:5000 app:app --timeout 60
     app.run(host="0.0.0.0", port=5000)
