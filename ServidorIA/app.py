@@ -60,7 +60,9 @@ def analyze():
         if not data:
             return jsonify({"error": "No data provided"}), 400
             
+        ts_jetson_start = int(time.time() * 1000)
         rtsp_url = data.get('rtsp_url')
+        event_id = data.get('event_id', 'unknown')
         sensor_data = data.get('sensors', {})
         
         # Log sanitizado
@@ -144,38 +146,55 @@ def analyze():
                         "label": class_name
                     })
                     
-                    # Lógica 'dummy' si usamos el modelo base para simular detección de fuego
-                    # O si el modelo REALMENTE tiene la clase 'fire'.
-                    if class_name in ['fire', 'smoke']:
-                         if conf > max_conf:
-                            max_conf = conf
-                         fire_detected = True
+                # Lógica 'dummy' si usamos el modelo base para simular detección de fuego
+                # O si el modelo REALMENTE tiene la clase 'fire'.
+                if class_name in ['fire', 'smoke']:
+                    if conf > max_conf:
+                        max_conf = conf
+                    fire_detected = True
 
             # Política de decisión (basada en el prompt)
             # Si NO tenemos modelo de fuego real, simulamos con sensores para el ejemplo
             # Pero el código debe ser real. 
             # Si max_conf es 0 (no detectó fire), usamos los sensores para 'alucinar' una confianza
             # para que el sistema backend reaccione según el ejemplo del usuario.
-            if max_conf == 0 and sensor_data:
-                # Simulación basada en sensores (igual que en backend pero en Fog)
-                temp = float(sensor_data.get('temperature', 0))
-                smoke = float(sensor_data.get('smoke', 0))
-                
-                if temp > 40 or smoke > 800:
-                    # Riesgo alto -> Simular detección visual baja/media
-                    max_conf = 0.65 
-                    fire_detected = False # Todavía no 'visto', pero riesgo
-                    # O tal vez True si queremos probar el flujo "Confirmado"
-                    if temp > 50:
-                        max_conf = 0.85
-                        fire_detected = True
-                        
+            # Simulación basada en sensores (igual que en backend pero en Fog)
+            temp = float(sensor_data.get('temperature', 0))
+            smoke = float(sensor_data.get('smoke', 0))
+            
+            if temp > 40 or smoke > 800:
+                # Riesgo alto -> Simular detección visual baja/media
+                max_conf = 0.65 
+                fire_detected = False # Todavía no 'visto', pero riesgo
+                # O tal vez True si queremos probar el flujo "Confirmado"
+                if temp > 50:
+                    max_conf = 0.85
+                    fire_detected = True
+            if data.get('include_image', False) and frame is not None:
+                try:
+                    # Reducir tamaño para transferencia rápida si es necesario, pero mejor calidad para evidencia
+                    # cv2.imencode returns (retval, buffer)
+                    ret_enc, buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+                    if ret_enc:
+                        import base64
+                        image_base64 = base64.b64encode(buffer).decode('utf-8')
+                except Exception as img_err:
+                    print(f"Error encoding image: {img_err}")
+
+            ts_end = int(time.time() * 1000)
+
             response_data = {
-                "fireDetected": max_conf >= 0.5, # Umbral bajo para flag simple
+                "event_id": data.get('event_id'), # Echo back
+                "fireDetected": max_conf >= 0.5,
                 "confidence": max_conf,
                 "class": "fire" if max_conf >= 0.5 else "normal",
                 "boxes": summary_boxes,
-                "ts": int(time.time() * 1000)
+                "ts": int(time.time() * 1000),
+                "timestamps": {
+                    "jetson_start": ts_jetson_start,
+                    "jetson_end": ts_end
+                },
+                "image_base64": image_base64
             }
             
             return jsonify(response_data)
