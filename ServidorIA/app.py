@@ -22,7 +22,7 @@ COMBINED_CONFIRM_THR = 0.45
 
 # Importante: apunta a pesos reales si puedes (local es mejor en producción)
 # Si HF no funciona en tu entorno, descarga y usa ruta local.
-FIRE_MODEL_ID = "touati-kamel/yolov8s-forest-fire-detection"
+FIRE_MODEL_ID = "touatikamel/yolov8s-forest-fire-detection"
 SMOKE_MODEL_ID = "kittendev/YOLOv8m-smoke-detection"
 
 fire_model = None
