@@ -2,3 +2,7 @@ flask
 opencv-python-headless
 ultralytics
 numpy
+datasets
+pillow
+tqdm
+pyyaml

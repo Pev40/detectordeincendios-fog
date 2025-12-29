@@ -3,6 +3,7 @@ import cv2
 import time
 import base64
 import traceback
+import os
 from ultralytics import YOLO
 
 app = Flask(__name__)
@@ -20,13 +21,10 @@ FIRE_CONFIRM_THR = 0.55
 SMOKE_WARNING_THR = 0.55
 COMBINED_CONFIRM_THR = 0.45
 
-# Importante: apunta a pesos reales si puedes (local es mejor en producción)
-# Si HF no funciona en tu entorno, descarga y usa ruta local.
-FIRE_MODEL_ID = "touatikamel/yolov8s-forest-fire-detection"
-SMOKE_MODEL_ID = "kittendev/YOLOv8m-smoke-detection"
+# Modelo unificado (Fire + Smoke)
+MODEL_PATH = os.path.join("ModeloNuevo", "external_repos", "luminous_yolov8", "weights", "best.pt")
 
-fire_model = None
-smoke_model = None
+unified_model = None
 models_error = None
 models_load_time = None
 models_ready = False
@@ -36,34 +34,32 @@ def log(msg):
 
 def load_models_lazy():
     """
-    Carga los modelos una sola vez.
+    Carga el modelo unificado una sola vez.
     Si falla, guarda el error para healthcheck.
     """
-    global fire_model, smoke_model, models_error, models_load_time, models_ready
-    if fire_model is not None and smoke_model is not None:
+    global unified_model, models_error, models_load_time, models_ready
+    if unified_model is not None:
         return True
 
     try:
         start_time = time.time()
         
         log("\n" + "="*60)
-        log("[BOOT] 🔄 Iniciando carga de modelos...")
-        log("="*60)
+        log("[BOOT] 🔄 Iniciando carga de modelo unificado...")
         
-        log(f"[BOOT] 📥 Cargando modelo FIRE: {FIRE_MODEL_ID}")
-        fire_model = YOLO(FIRE_MODEL_ID)
-        log("[BOOT] ✅ Modelo FIRE cargado correctamente")
+        if not os.path.exists(MODEL_PATH):
+            raise FileNotFoundError(f"No se encuentra el modelo en: {MODEL_PATH}")
 
-        log(f"[BOOT] 📥 Cargando modelo SMOKE: {SMOKE_MODEL_ID}")
-        smoke_model = YOLO(SMOKE_MODEL_ID)
-        log("[BOOT] ✅ Modelo SMOKE cargado correctamente")
+        log(f"[BOOT] 📥 Cargando modelo desde: {MODEL_PATH}")
+        unified_model = YOLO(MODEL_PATH)
+        log("[BOOT] ✅ Modelo cargado correctamente")
 
         models_load_time = time.time() - start_time
         models_error = None
         models_ready = True
         
         log("="*60)
-        log(f"[BOOT] ✨ TODOS LOS MODELOS LISTOS (tiempo: {models_load_time:.2f}s)")
+        log(f"[BOOT] ✨ MODELO LISTO (tiempo: {models_load_time:.2f}s)")
         log("="*60 + "\n")
         
         return True
@@ -72,10 +68,9 @@ def load_models_lazy():
         models_error = f"{type(e).__name__}: {e}"
         models_ready = False
         models_load_time = time.time() - start_time if 'start_time' in locals() else None
-        log("[BOOT] ❌ Error cargando modelos:")
+        log("[BOOT] ❌ Error cargando modelo:")
         log(traceback.format_exc())
-        fire_model = None
-        smoke_model = None
+        unified_model = None
         return False
 
 # ==========================
@@ -188,8 +183,7 @@ def health():
     return jsonify({
         "ok": ok,
         "models_ready": models_ready,
-        "fire_model_loaded": fire_model is not None,
-        "smoke_model_loaded": smoke_model is not None,
+        "model_loaded": unified_model is not None,
         "models_error": models_error,
         "models_load_time_seconds": models_load_time
     }), (200 if ok else 500)
@@ -228,15 +222,15 @@ def analyze():
 
         frame = maybe_resize(frame)
 
-        # Infer FIRE
+        # Infer Unified Model
         t1 = time.time()
-        fire_boxes, fire_best = yolo_infer(fire_model, frame, conf=CONF_FIRE, iou=IOU_NMS)
-        t_fire = int((time.time() - t1) * 1000)
+        conf_thresh = min(CONF_FIRE, CONF_SMOKE)
+        boxes, best_by_label = yolo_infer(unified_model, frame, conf=conf_thresh, iou=IOU_NMS)
+        t_infer = int((time.time() - t1) * 1000)
 
-        # Infer SMOKE
-        t2 = time.time()
-        smoke_boxes, smoke_best = yolo_infer(smoke_model, frame, conf=CONF_SMOKE, iou=IOU_NMS)
-        t_smoke = int((time.time() - t2) * 1000)
+        # Extract scores for fusion logic
+        fire_best = {'fire': best_by_label['fire']} if 'fire' in best_by_label else {}
+        smoke_best = {'smoke': best_by_label['smoke']} if 'smoke' in best_by_label else {}
 
         state, confidence, smoke_conf = fuse_decision(fire_best, smoke_best)
 
@@ -253,21 +247,16 @@ def analyze():
             "confidence": float(confidence),
             "confidence_smoke": float(smoke_conf),
             "detections": {
-                "fire_model": {
-                    "model_id": FIRE_MODEL_ID,
-                    "best_by_label": fire_best,
-                    "boxes": fire_boxes
-                },
-                "smoke_model": {
-                    "model_id": SMOKE_MODEL_ID,
-                    "best_by_label": smoke_best,
-                    "boxes": smoke_boxes
+                "unified_model": {
+                    "model_path": MODEL_PATH,
+                    "best_by_label": best_by_label,
+                    "boxes": boxes
                 }
             },
             "image_base64": image_base64,
             "ts": int(time.time() * 1000),
             "timestamps": {"jetson_start": ts_jetson_start, "jetson_end": ts_end},
-            "timings_ms": {"rtsp": t_rtsp, "infer_fire": t_fire, "infer_smoke": t_smoke}
+            "timings_ms": {"rtsp": t_rtsp, "infer": t_infer}
         })
 
     except Exception as e:
