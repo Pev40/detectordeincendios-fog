@@ -1,0 +1,4 @@
+config:
+  fire-id-pulumi:telegramChatId: "1202229166"
+  fire-id-pulumi:telegramBotToken:
+    secure: AAABAInnUf1e3gBCah8V17qDA5fTEbxpO8Val0H8jYJsbXe+/g3YrIMDp0mLt4EwzTM2P21iqj9RsuVhs59fv5TywM6VukAe01E8U8Z2

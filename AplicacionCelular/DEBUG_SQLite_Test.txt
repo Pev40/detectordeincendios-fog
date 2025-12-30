@@ -1,0 +1,43 @@
+// Script de prueba para SQLite - Agregar a DashboardScreen.tsx temporalmente
+
+// Agregar esta función en DashboardScreen:
+
+const testDatabase = async () => {
+  console.log('🧪 Probando base de datos SQLite...');
+  
+  try {
+    // Test 1: Inicializar
+    await databaseService.initialize();
+    console.log('✅ Test 1: Base de datos inicializada');
+
+    // Test 2: Guardar captura
+    await databaseService.saveLocalCapture({
+      requestId: 'test_' + Date.now(),
+      imagePath: '/test/path.jpg',
+      fireDetected: false,
+      confidence: 0.5
+    });
+    console.log('✅ Test 2: Captura guardada');
+
+    // Test 3: Leer capturas
+    const captures = await databaseService.getLocalCaptures(10);
+    console.log('✅ Test 3: Capturas leídas:', captures.length);
+
+    Alert.alert(
+      '✅ SQLite Funcional',
+      `Base de datos funciona correctamente.\nCapturas guardadas: ${captures.length}`,
+      [{ text: 'OK' }]
+    );
+
+  } catch (error) {
+    console.error('❌ Error en test de SQLite:', error);
+    Alert.alert(
+      '❌ Error en SQLite',
+      `Error: ${error.message}`,
+      [{ text: 'OK' }]
+    );
+  }
+};
+
+// Llamar esta función al presionar un botón de prueba
+// O ejecutarla automáticamente en useEffect para debugging

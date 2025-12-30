@@ -1,0 +1,20 @@
+{
+  "name": "fire-id-pulumi",
+  "version": "1.0.0",
+  "description": "Pulumi project for provisioning DynamoDB table for Fire ID backend",
+  "main": "bin/index.js",
+  "scripts": {
+    "build": "tsc",
+    "up": "pulumi up"
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20",
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@pulumi/pulumi": "^3",
+    "@pulumi/aws": "^5"
+  }
+}

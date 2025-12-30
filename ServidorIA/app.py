@@ -202,23 +202,41 @@ def analyze():
             return jsonify({"error": "No data provided"}), 400
 
         rtsp_url = data.get("rtsp_url")
+        image_base64_input = data.get("imageBase64")
         event_id = data.get("event_id", "unknown")
         sensor_data = data.get("sensors", {})
 
-        log(f"[ANALYZE] event_id={event_id} rtsp={rtsp_url} sensors={sensor_data}")
+        log(f"[ANALYZE] event_id={event_id} rtsp={rtsp_url} has_image={image_base64_input is not None} sensors={sensor_data}")
 
-        if not rtsp_url:
-            return jsonify({"error": "RTSP URL missing"}), 400
+        if not rtsp_url and not image_base64_input:
+            return jsonify({"error": "RTSP URL or imageBase64 missing"}), 400
 
-        if "rtsp_transport" not in rtsp_url:
-            sep = "&" if "?" in rtsp_url else "?"
-            rtsp_url = f"{rtsp_url}{sep}rtsp_transport=udp"
+        frame = None
+        t_rtsp = 0
+        err = None
 
-        t0 = time.time()
-        frame, err = capture_frame_from_rtsp(rtsp_url)
-        t_rtsp = int((time.time() - t0) * 1000)
+        if image_base64_input:
+            try:
+                # Decode base64 image
+                img_data = base64.b64decode(image_base64_input)
+                import numpy as np
+                nparr = np.frombuffer(img_data, np.uint8)
+                frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                if frame is None:
+                    err = "Failed to decode base64 image"
+            except Exception as e:
+                err = f"Error decoding base64: {str(e)}"
+        elif rtsp_url:
+            if "rtsp_transport" not in rtsp_url:
+                sep = "&" if "?" in rtsp_url else "?"
+                rtsp_url = f"{rtsp_url}{sep}rtsp_transport=udp"
+
+            t0 = time.time()
+            frame, err = capture_frame_from_rtsp(rtsp_url)
+            t_rtsp = int((time.time() - t0) * 1000)
+
         if frame is None:
-            return jsonify({"error": f"RTSP Error: {err}", "timings_ms": {"rtsp": t_rtsp}}), 500
+            return jsonify({"error": f"Input Error: {err}", "timings_ms": {"rtsp": t_rtsp}}), 500
 
         frame = maybe_resize(frame)
 

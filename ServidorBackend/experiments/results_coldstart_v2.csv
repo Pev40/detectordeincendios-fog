@@ -1,0 +1,2 @@
+timestamp,type,client_invoke_ms,lambda_duration_ms,lambda_init_ms,status_code
+2025-12-30T03:34:28.516Z,COLD,2088,1077.14,351.33,200
